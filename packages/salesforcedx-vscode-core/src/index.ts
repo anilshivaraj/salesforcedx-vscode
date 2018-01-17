@@ -10,7 +10,6 @@ import { ConfigurationTarget } from 'vscode';
 import {
   forceAliasList,
   forceApexClassCreate,
-  forceApexDebugLogForReplayDebugger,
   forceApexExecute,
   forceApexTestRun,
   forceApexTriggerCreate,
@@ -30,11 +29,13 @@ import {
   forceSourcePull,
   forceSourcePush,
   forceSourceStatus,
+  forceStartApexDebugLogging,
+  forceStopApexDebugLogging,
   forceTaskStop,
   forceVisualforceComponentCreate,
   forceVisualforcePageCreate
 } from './commands';
-import { debugLevelCleanUp } from './commands/forceApexDebugLogForReplayDebugger';
+import { restoreDebugLevels } from './commands/forceStopApexDebugLogging';
 import {
   CLIENT_ID,
   SFDX_CLIENT_ENV_VAR,
@@ -183,9 +184,14 @@ function registerCommands(): vscode.Disposable {
     forceApexTriggerCreate
   );
 
-  const forceApexDebugLogForReplayDebuggerCmd = vscode.commands.registerCommand(
-    'sfdx.force.apex.debug.log.replay.debugger',
-    forceApexDebugLogForReplayDebugger
+  const forceStartApexDebugLoggingCmd = vscode.commands.registerCommand(
+    'sfdx.force.start.apex.debug.logging',
+    forceStartApexDebugLogging
+  );
+
+  const forceStopApexDebugLoggingCmd = vscode.commands.registerCommand(
+    'sfdx.force.stop.apex.debug.logging',
+    forceStopApexDebugLogging
   );
 
   // Internal commands
@@ -226,7 +232,8 @@ function registerCommands(): vscode.Disposable {
     forceGenerateFauxClassesCmd,
     forceProjectCreateCmd,
     forceApexTriggerCreateCmd,
-    forceApexDebugLogForReplayDebuggerCmd,
+    forceStartApexDebugLoggingCmd,
+    forceStopApexDebugLoggingCmd,
     internalCancelCommandExecution
   );
 }
@@ -298,5 +305,5 @@ export async function activate(context: vscode.ExtensionContext) {
 
 export function deactivate() {
   console.log('SFDX CLI Extension Deactivated');
-  debugLevelCleanUp();
+  restoreDebugLevels();
 }
