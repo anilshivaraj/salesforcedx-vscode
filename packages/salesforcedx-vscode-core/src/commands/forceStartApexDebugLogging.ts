@@ -21,6 +21,7 @@ import { CancellableStatusBar, taskViewService } from '../statuses';
 import { showTraceFlagExpiration } from '../traceflag-time-decorator';
 import {
   CancelResponse,
+  CompositeSfdxCommandletExecutor,
   ContinueResponse,
   EmptyParametersGatherer,
   ParametersGatherer,
@@ -227,28 +228,13 @@ export class UpdateDebugLevelsExecutor extends SfdxCommandletExecutor<{}> {
       .withFlag('--sobjectid', developerLogTraceFlag.getDebugLevelId())
       .withFlag('--values', 'ApexCode=Finest Visualforce=Finest')
       .withArg('--usetoolingapi')
+      .withArg('--json')
       .build();
   }
-
-  public execute(response: ContinueResponse<{}>): void {
-    const cancellationTokenSource = new vscode.CancellationTokenSource();
-    const cancellationToken = cancellationTokenSource.token;
-
-    const execution = new CliCommandExecutor(this.build(response.data), {
-      cwd: vscode.workspace.rootPath
-    }).execute(cancellationToken);
-
-    channelService.streamCommandOutput(execution);
-    channelService.showChannelOutput();
-    CancellableStatusBar.show(execution, cancellationTokenSource);
-    taskViewService.addCommandExecution(execution, cancellationTokenSource);
-    execution.processExitSubject.subscribe(async data => {
-      if (data != undefined && data.toString() === '0') {
-        showTraceFlagExpiration(
-          developerLogTraceFlag.getExpirationDate().toLocaleString()
-        );
-      }
-    });
+  public updateResponse(data: any, resultJson: any): void {
+    showTraceFlagExpiration(
+      developerLogTraceFlag.getExpirationDate().toLocaleString()
+    );
   }
 }
 
@@ -268,26 +254,50 @@ export class UpdateTraceFlagsExecutor extends SfdxCommandletExecutor<{}> {
           .toUTCString()}'`
       )
       .withArg('--usetoolingapi')
+      .withArg('--json')
       .build();
-  }
-
-  public execute(response: ContinueResponse<{}>): void {
-    const cancellationTokenSource = new vscode.CancellationTokenSource();
-    const cancellationToken = cancellationTokenSource.token;
-
-    const execution = new CliCommandExecutor(this.build(response.data), {
-      cwd: vscode.workspace.rootPath
-    }).execute(cancellationToken);
-
-    channelService.streamCommandOutput(execution);
-    channelService.showChannelOutput();
-    CancellableStatusBar.show(execution, cancellationTokenSource);
-    taskViewService.addCommandExecution(execution, cancellationTokenSource);
   }
 }
 
 const workspaceChecker = new SfdxWorkspaceChecker();
 const parameterGatherer = new EmptyParametersGatherer();
+
+class Test extends CompositeSfdxCommandletExecutor<any> {
+  public build(data: any): Command {
+    return new SfdxCommandBuilder().withDescription('test').build();
+  }
+}
+
+export class ForceQueryTraceFlag extends SfdxCommandletExecutor<any> {
+  public build(): Command {
+    return new SfdxCommandBuilder()
+      .withDescription(nls.localize('force_start_apex_debug_logging'))
+      .withArg('force:data:soql:query')
+      .withFlag(
+        '--query',
+        "SELECT id, logtype, startdate, expirationdate, debuglevelid, debuglevel.apexcode, debuglevel.visualforce FROM TraceFlag WHERE logtype='DEVELOPER_LOG'"
+      )
+      .withArg('--usetoolingapi')
+      .withArg('--json')
+      .build();
+  }
+
+  public updateResponse(data: any, resultJson: any): void {
+    if (resultJson && resultJson.result && resultJson.result.size >= 1) {
+      const traceflag = resultJson.result.records[0];
+      developerLogTraceFlag.setTraceFlagDebugLevelInfo(
+        traceflag.Id,
+        traceflag.StartDate,
+        traceflag.ExpirationDate,
+        traceflag.DebugLevelId,
+        traceflag.DebugLevel.ApexCode,
+        traceflag.DebugLevel.Visualforce
+      );
+      developerLogTraceFlag.turnOnLogging();
+      developerLogTraceFlag.validateDates();
+    }
+  }
+}
 
 export function forceStartApexDebugLogging() {
   // tslint:disable-next-line:no-invalid-this
@@ -295,7 +305,11 @@ export function forceStartApexDebugLogging() {
   const commandlet = new SfdxCommandlet(
     workspaceChecker,
     parameterGatherer,
-    executor
+    new Test(
+      new ForceQueryTraceFlag(),
+      new UpdateDebugLevelsExecutor(),
+      new UpdateTraceFlagsExecutor()
+    )
   );
   commandlet.run();
 }
